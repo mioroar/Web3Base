@@ -1,35 +1,20 @@
-import pandas as pd
 from settings.chains import chains
 from classes.client import Client
 
 
-# def get_balance_in_all_network(acc_list: list):
-#     obj_acc_list = []
-#     for acc in acc_list:
-#         account = Client(chains["ethereum"], acc)
-#         obj_acc_list.append(account)
-#     for acc in obj_acc_list:
-#         print("--------------------------------")
-#         print(f"Адрес: {acc.public_key}")
-#         for chain_name in chains:
-#             chain_obj = chains[chain_name]
-#             acc.switch_network(chain_obj)
-#             print(f"{chain_name}: {acc.get_balance()}")
 def get_balance_in_all_network(acc_list: list):
-    data = []
-
+    obj_acc_list = []
     for acc in acc_list:
         account = Client(chains["ethereum"], acc)
-        balances = {"Адрес": account.public_key}
+        obj_acc_list.append(account)
+    for acc in obj_acc_list:
+        print("--------------------------------")
+        print(f"Адрес: {acc.public_key}")
+        for chain_name in chains:
+            chain_obj = chains[chain_name]
+            acc.switch_network(chain_obj)
+            print(f"{chain_name}: {acc.get_balance()}")
 
-        for chain_name, chain_obj in chains.items():
-            account.switch_network(chain_obj)
-            balances[chain_name] = account.get_balance()
-
-        data.append(balances)
-
-    df = pd.DataFrame(data)
-    print(df.to_string(index=False))
 
 async def get_balance_in_one_network(acc_list: list):
     print("Выберите сеть")

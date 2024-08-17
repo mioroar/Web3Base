@@ -31,7 +31,7 @@ chains = {
         8453,
         "https://base.drpc.org",
         "ETH"),
-    "avalance": Chain(
+    "avalanche": Chain(
         'avalance',
         43114,
         "https://avalanche.drpc.org",
@@ -41,11 +41,6 @@ chains = {
         137,
         "https://polygon.llamarpc.com",
         "MATIC"),
-    "linea": Chain(
-        'linea',
-        59114,
-        "https://linea.decubate.com",
-        "ETH"),
     "optimism": Chain(
         'optimism',
         10,

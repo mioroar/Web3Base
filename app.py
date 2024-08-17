@@ -55,6 +55,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-RPCS = {"23295": {"rpc": "https://testnet.sapphire.oasis.io/", "chainId": 23295, "network": "oasis_saphire_testnet","chunkSize": 100}}
-"{ \"11155420\":{ \"rpc\":\"https://sepolia.optimism.io\", \"fallbackRPCs\": [\"https://public.stackup.sh/api/v1/node/optimism-sepolia\"], \"chainId\": 11155420, \"network\": \"optimism-sepolia\", \"chunkSize\": 1000 }}"
