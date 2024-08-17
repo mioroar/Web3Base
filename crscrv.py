@@ -53,7 +53,7 @@ def make_request_with_retries(url, params, retries=1, delay=1):
 
 # Функция для отправки запроса и анализа результата
 def check_swap_route(token_in: dict, chain_in: Chain, token_out: dict, chain_out: Chain, swap_only_in_plus: bool,
-                     swap_plus_size: float, max_swap_loss: float, amount: float = 1000):
+                     swap_plus_size: float, max_swap_loss: float, slippage: float, amount: float = 1000):
     w3_in = Web3(Web3.HTTPProvider(chain_in.rpc))
     checksum_token_in = w3_in.to_checksum_address(token_in["address"])
     token_in_contract = w3_in.eth.contract(address=checksum_token_in, abi=ERC20_ABI)
@@ -84,15 +84,15 @@ def check_swap_route(token_in: dict, chain_in: Chain, token_out: dict, chain_out
             "amountIn": str(amount_in_scaled),
             "tokenIn": token_in["address"]
         },
-        "slippage": 0.1
+        "slippage": slippage
     }
 
     response = make_request_with_retries(url, params)
 
     if response.status_code == 200:
         data = response.json()
-        if data and "amountOut" in data[0]:
-            amount_out_raw = float(data[0]["amountOut"])
+        if data and "amountOutWithoutSlippage" in data[0]:
+            amount_out_raw = float(data[0]["amountOutWithoutSlippage"])
             amount_out = amount_out_raw / (10 ** decimals_out)  # Масштабируем amountOut обратно
             if swap_only_in_plus:
                 if amount_out - amount > swap_plus_size:
@@ -130,7 +130,7 @@ def check_swap_route(token_in: dict, chain_in: Chain, token_out: dict, chain_out
     return None
 
 
-def get_all_routes(swap_only_in_plus: bool, swap_plus_size: float, max_swap_loss: float, amount: float) -> list:
+def get_all_routes(swap_only_in_plus: bool, swap_plus_size: float, max_swap_loss: float, amount: float, slippage: float) -> list:
     routes = []
     for token_in in tokens:
         chain_in = chains[token_in["chain"].lower()]  # Получаем объект Chain для входного токена
@@ -138,7 +138,7 @@ def get_all_routes(swap_only_in_plus: bool, swap_plus_size: float, max_swap_loss
             chain_out = chains[token_out["chain"].lower()]  # Получаем объект Chain для выходного токена
             if token_in != token_out or chain_in != chain_out:  # Проверка чтобы не делать обмен одного токена на него же
                 result = check_swap_route(token_in, chain_in, token_out, chain_out, swap_only_in_plus, swap_plus_size,
-                                          max_swap_loss, amount)
+                                          max_swap_loss, amount, slippage)
                 if result:
                     # Проверяем, содержит ли результат ключи 'from_token' и 'from_chain'
                     if isinstance(result, dict) and 'from_token' in result and 'from_chain' in result:
@@ -157,5 +157,5 @@ def get_profitable_route(routes: list[dict]):
     return max_profit
 
 
-print(x := get_all_routes(False, 0.1, 3, 1000))
+print(x := get_all_routes(True, 1, 3, 10000, 0.1))
 print(y := get_profitable_route(x))
