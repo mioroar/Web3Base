@@ -52,9 +52,9 @@ def memo_txt_to_pk_txt() -> None:
 
     :raises FileNotFoundError: Если файл с мнемоническими фразами или файл для записи ключей не найден.
     """
-    memo = read_file("../settings/mnemonic.txt")
+    memo = read_file("settings/mnemonic.txt")
     pk_list = mnemonic_to_private_key(memo)
-    path = "../settings/pk.txt"
+    path = "settings/pk.txt"
     existing_pks = set()
     if os.path.exists(path):
         existing_pks = set(read_file(path))
