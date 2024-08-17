@@ -1,59 +1,76 @@
 import time
+from typing import Optional
 
 import requests
-import web3
+import logging
 from web3 import Web3
 from settings.chains import chains, Chain
-
+from settings.crosscurve import tokens
 from abi.erc20 import ERC20_ABI
 
-# Заданные сети и токены
-tokens = [
-    {"chain": "Ethereum", "ticker": "USDC", "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"},
-    {"chain": "Ethereum", "ticker": "USDT", "address": "0xdac17f958d2ee523a2206206994597c13d831ec7"},
-    {"chain": "Arbitrum", "ticker": "USDC", "address": "0xaf88d065e77c8cc2239327c5edb3a432268e5831"},
-    {"chain": "Arbitrum", "ticker": "USDT", "address": "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9"},
-    {"chain": "Optimism", "ticker": "USDC", "address": "0x0b2c639c533813f4aa9d7837caf62653d097ff85"},
-    {"chain": "Optimism", "ticker": "USDT", "address": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58"},
-    {"chain": "Avalanche", "ticker": "DAI.e", "address": "0xd586e7f844cea2f87f50152665bcbc2c279d8d70"},
-    {"chain": "Avalanche", "ticker": "USDC.e", "address": "0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664"},
-    {"chain": "Avalanche", "ticker": "USDT.e", "address": "0xc7198437980c041c805a1edcba50c1ce5db95118"},
-    {"chain": "Avalanche", "ticker": "avDAI", "address": "0x47afa96cdc9fab46904a55a6ad4bf6660b53c38a"},
-    {"chain": "Avalanche", "ticker": "avUSDC", "address": "0x46a51127c3ce23fb7ab1de06226147f446e4a857"},
-    {"chain": "Avalanche", "ticker": "avUSDT", "address": "0x532e6537fea298397212f09a61e03311686f548e"},
-    {"chain": "Polygon", "ticker": "USDC", "address": "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359"},
-    {"chain": "Polygon", "ticker": "DAI", "address": "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"},
-    {"chain": "Polygon", "ticker": "USDC.e", "address": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"},
-    {"chain": "Polygon", "ticker": "USDT", "address": "0xc2132d05d31c914a87c6611c10748aeb04b58e8f"},
-    {"chain": "BSC", "ticker": "USDC", "address": "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d"},
-    {"chain": "BSC", "ticker": "USDT", "address": "0x55d398326f99059fF775485246999027B3197955"},
-]
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,  # Уровень логирования
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
+    handlers=[
+        logging.StreamHandler(),  # Вывод в консоль
+        logging.FileHandler('swap_routes.log', mode='w')  # Вывод в файл
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+
+# Функция для получения decimals с обработкой повторных попыток
+def get_decimals_with_retries(contract, retries=1, delay=1):
+    for attempt in range(retries):
+        try:
+            return contract.functions.decimals().call()
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Request failed: {e}. Retrying in {delay} seconds...")
+            time.sleep(delay)
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}. Retrying in {delay} seconds...")
+            time.sleep(delay)
+    logger.error(f"Failed to get decimals after {retries} attempts, skipping token.")
+    return None
 
 
 # Функция для отправки запроса и анализа результата
-def make_request_with_retries(url, params, retries=5, delay=10):
+def make_request_with_retries(url, params, retries=1, delay=1):
     for attempt in range(retries):
         response = requests.post(url, json=params)
         if response.status_code == 200:
             return response
         elif response.status_code == 429:  # Too Many Requests
-            print(f"Received 429 Too Many Requests. Retrying in {delay} seconds...")
+            logger.warning(f"Received 429 Too Many Requests. Retrying in {delay} seconds...")
             time.sleep(delay)
         else:
             response.raise_for_status()  # Если другой статус, просто выбрасываем исключение
+    logger.error(f"Failed to get a successful response after {retries} attempts")
     raise Exception(f"Failed to get a successful response after {retries} attempts")
 
+
 # Функция для отправки запроса и анализа результата
-def check_swap_route(token_in: dict, chain_in: Chain, token_out: dict, chain_out: Chain, amount: int = 1000):
+def check_swap_route(token_in: dict, chain_in: Chain, token_out: dict, chain_out: Chain, swap_only_in_plus: bool,
+                     swap_plus_size: float, max_swap_loss: float, amount: float = 1000):
     w3_in = Web3(Web3.HTTPProvider(chain_in.rpc))
     checksum_token_in = w3_in.to_checksum_address(token_in["address"])
     token_in_contract = w3_in.eth.contract(address=checksum_token_in, abi=ERC20_ABI)
-    decimals_in = token_in_contract.functions.decimals().call()
+    decimals_in = get_decimals_with_retries(token_in_contract)
+
+    if decimals_in is None:
+        logger.warning(f"Skipping token {token_in['ticker']} on {chain_in.name} due to missing decimals.")
+        return None  # Переход к следующему токену, если не удалось получить decimals
 
     w3_out = Web3(Web3.HTTPProvider(chain_out.rpc))
-    checksum_token_out = w3_in.to_checksum_address(token_out["address"])
+    checksum_token_out = w3_out.to_checksum_address(token_out["address"])
     token_out_contract = w3_out.eth.contract(address=checksum_token_out, abi=ERC20_ABI)
-    decimals_out = token_out_contract.functions.decimals().call()
+    decimals_out = get_decimals_with_retries(token_out_contract)
+
+    if decimals_out is None:
+        logger.warning(f"Skipping token {token_out['ticker']} on {chain_out.name} due to missing decimals.")
+        return None  # Переход к следующему токену, если не удалось получить decimals
 
     # Масштабирование amountIn с учетом decimals
     amount_in_scaled = amount * (10 ** decimals_in)
@@ -77,47 +94,68 @@ def check_swap_route(token_in: dict, chain_in: Chain, token_out: dict, chain_out
         if data and "amountOut" in data[0]:
             amount_out_raw = float(data[0]["amountOut"])
             amount_out = amount_out_raw / (10 ** decimals_out)  # Масштабируем amountOut обратно
+            if swap_only_in_plus:
+                if amount_out - amount > swap_plus_size:
+                    return {
+                        "from_token": token_in["ticker"],
+                        "from_chain": chain_in.name,
+                        "to_token": token_out["ticker"],
+                        "to_chain": chain_out.name,
+                        "amount_in": amount,
+                        "amount_out": amount_out,
+                        "profit": amount_out - amount,
+                        "route": data[0].get("route")
+                    }
+                logger.info(
+                    f"{chain_in.name} {token_in['ticker']} -> {chain_out.name} {token_out['ticker']} | {amount} : {amount_out}")
+                return None
+            else:
+                if amount_out - amount > -max_swap_loss:
+                    return {
+                        "from_token": token_in["ticker"],
+                        "from_chain": chain_in.name,
+                        "to_token": token_out["ticker"],
+                        "to_chain": chain_out.name,
+                        "amount_in": amount,
+                        "amount_out": amount_out,
+                        "profit": amount_out - amount,
+                        "route": data[0].get("route")
+                    }
+                logger.info(
+                    f"{chain_in.name} {token_in['ticker']} -> {chain_out.name} {token_out['ticker']} | {amount} : {amount_out}")
+                return None
+        logger.warning("response data is empty")
+        return None
+    logger.warning(f"response status != 200")
+    return None
 
-            if amount_out >= amount:
-                return {
-                    "from_token": token_in["ticker"],
-                    "from_chain": chain_in.name,
-                    "to_token": token_out["ticker"],
-                    "to_chain": chain_out.name,
-                    "amount_in": amount,
-                    "amount_out": amount_out
-                }
-            return f"{chain_in.name} {token_in['ticker']} -> {chain_out.name} {token_out['ticker']} | {amount} : {amount_out}"
-    return 0
 
-# Основной цикл для перебора всех комбинаций
-for token_in in tokens:
-    chain_in = chains[token_in["chain"].lower()]  # Получаем объект Chain для входного токена
-    for token_out in tokens:
-        chain_out = chains[token_out["chain"].lower()]  # Получаем объект Chain для выходного токена
-        if token_in != token_out or chain_in != chain_out:  # Проверка чтобы не делать обмен одного токена на него же
-            result = check_swap_route(token_in, chain_in, token_out, chain_out)
-            if result:
-                # Проверяем, содержит ли результат ключи 'from_token' и 'from_chain'
-                if isinstance(result, dict) and 'from_token' in result and 'from_chain' in result:
-                    print(
-                        f"Swap {result['from_token']} on {result['from_chain']} to {result['to_token']} on {result['to_chain']}: "
-                        f"Amount In = {result['amount_in']}, Amount Out = {result['amount_out']:.6f}")
-                else:
-                    print(result)
+def get_all_routes(swap_only_in_plus: bool, swap_plus_size: float, max_swap_loss: float, amount: float) -> list:
+    routes = []
+    for token_in in tokens:
+        chain_in = chains[token_in["chain"].lower()]  # Получаем объект Chain для входного токена
+        for token_out in tokens:
+            chain_out = chains[token_out["chain"].lower()]  # Получаем объект Chain для выходного токена
+            if token_in != token_out or chain_in != chain_out:  # Проверка чтобы не делать обмен одного токена на него же
+                result = check_swap_route(token_in, chain_in, token_out, chain_out, swap_only_in_plus, swap_plus_size,
+                                          max_swap_loss, amount)
+                if result:
+                    # Проверяем, содержит ли результат ключи 'from_token' и 'from_chain'
+                    if isinstance(result, dict) and 'from_token' in result and 'from_chain' in result:
+                        routes.append(result)
+                        logger.info(
+                            f"Swap {result['from_token']} on {result['from_chain']} to {result['to_token']} on {result['to_chain']}: "
+                            f"Amount In = {result['amount_in']}, Amount Out = {result['amount_out']:.6f}")
+    return routes
 
-# Основной цикл для перебора всех комбинаций
-for token_in in tokens:
-    chain_in = chains[token_in["chain"].lower()]  # Получаем объект Chain для входного токена
-    for token_out in tokens:
-        chain_out = chains[token_out["chain"].lower()]  # Получаем объект Chain для выходного токена
-        if token_in != token_out or chain_in != chain_out:  # Проверка чтобы не делать обмен одного токена на него же
-            result = check_swap_route(token_in, chain_in, token_out, chain_out)
-            if result:
-                # Проверяем, содержит ли результат ключи 'from_token' и 'from_chain'
-                if 'from_token' in result and 'from_chain' in result:
-                    print(
-                        f"Swap {result['from_token']} on {result['from_chain']} to {result['to_token']} on {result['to_chain']}: "
-                        f"Amount In = {result['amount_in']}, Amount Out = {result['amount_out']:.6f}")
-                else:
-                    print(result)
+
+def get_profitable_route(routes: list[dict]):
+    max_profit = []
+    for i in range(len(routes) - 1):
+        if routes[i].get("profit") < routes[i + 1].get("profit"):
+            max_profit = [routes[i + 1].get("profit"), routes[i + 1].get("route")]
+    return max_profit
+
+
+print(x := get_all_routes(False, 0.1, 3, 1000))
+print(y := get_profitable_route(x))
