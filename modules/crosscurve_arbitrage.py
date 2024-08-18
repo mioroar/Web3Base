@@ -129,7 +129,7 @@ def check_swap_route(token_in: dict, chain_in: Chain, token_out: dict, chain_out
 
 def get_all_routes(tokens: list, swap_only_in_plus: bool, swap_plus_size: float, max_swap_loss: float, slippage: float,
                    amount: float) -> list:
-    routes = []
+    all_routes = []
     for token_in in tokens:
         chain_in = chains[token_in["chain"].lower()]  # Получаем объект Chain для входного токена
         for token_out in tokens:
@@ -140,23 +140,16 @@ def get_all_routes(tokens: list, swap_only_in_plus: bool, swap_plus_size: float,
                 if result:
                     # Проверяем, содержит ли результат ключи 'from_token' и 'from_chain'
                     if isinstance(result, dict) and 'from_token' in result and 'from_chain' in result:
-                        routes.append(result)
+                        all_routes.append(result)
                         logger.info(
                             f"Swap {result['from_token']} on {result['from_chain']} to {result['to_token']} on {result['to_chain']}: "
                             f"Amount In = {result['amount_in']}, Amount Out = {result['amount_out']:.6f}")
-    return routes
+    return all_routes
 
 
 def get_profitable_route(routes: list[dict]):
-    max_profit = []
-    for i in range(len(routes) - 1):
-        if routes[i].get("profit") < routes[i + 1].get("profit"):
-            max_profit = {"profit": routes[i + 1].get("profit"),
-                          "from_chain": routes[i + 1].get("from_chain"),
-                          "to_chain": routes[i + 1].get("to_chain"),
-                          "from_token": routes[i + 1].get("from_token"),
-                          "to_token": routes[i + 1].get("to_token"),
-                          "amount_in": routes[i + 1].get("amount_in"),
-                          "amount_out": routes[i + 1].get("amount_out"),
-                          "route": routes[i + 1].get("route")}
-    return max_profit
+    max_profit_route = routes[0]  # Начальная инициализация
+    for i in range(1, len(routes)):  # Начинаем с первого (второго) элемента
+        if routes[i].get("profit") > max_profit_route.get("profit"):
+            max_profit_route = routes[i]
+    return max_profit_route
