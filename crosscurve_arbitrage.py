@@ -1,11 +1,8 @@
 import time
-from typing import Optional
-
 import requests
 import logging
 from web3 import Web3
 from settings.chains import chains, Chain
-from settings.crosscurve import tokens
 from abi.erc20 import ERC20_ABI
 
 # Настройка логирования
@@ -130,7 +127,8 @@ def check_swap_route(token_in: dict, chain_in: Chain, token_out: dict, chain_out
     return None
 
 
-def get_all_routes(swap_only_in_plus: bool, swap_plus_size: float, max_swap_loss: float, amount: float, slippage: float) -> list:
+def get_all_routes(tokens: list, swap_only_in_plus: bool, swap_plus_size: float, max_swap_loss: float, slippage: float,
+                   amount: float) -> list:
     routes = []
     for token_in in tokens:
         chain_in = chains[token_in["chain"].lower()]  # Получаем объект Chain для входного токена
@@ -138,7 +136,7 @@ def get_all_routes(swap_only_in_plus: bool, swap_plus_size: float, max_swap_loss
             chain_out = chains[token_out["chain"].lower()]  # Получаем объект Chain для выходного токена
             if token_in != token_out or chain_in != chain_out:  # Проверка чтобы не делать обмен одного токена на него же
                 result = check_swap_route(token_in, chain_in, token_out, chain_out, swap_only_in_plus, swap_plus_size,
-                                          max_swap_loss, amount, slippage)
+                                          max_swap_loss, slippage, amount)
                 if result:
                     # Проверяем, содержит ли результат ключи 'from_token' и 'from_chain'
                     if isinstance(result, dict) and 'from_token' in result and 'from_chain' in result:
@@ -153,9 +151,12 @@ def get_profitable_route(routes: list[dict]):
     max_profit = []
     for i in range(len(routes) - 1):
         if routes[i].get("profit") < routes[i + 1].get("profit"):
-            max_profit = [routes[i + 1].get("profit"), routes[i + 1].get("route")]
+            max_profit = {"profit": routes[i + 1].get("profit"),
+                          "from_chain": routes[i + 1].get("from_chain"),
+                          "to_chain": routes[i + 1].get("to_chain"),
+                          "from_token": routes[i + 1].get("from_token"),
+                          "to_token": routes[i + 1].get("to_token"),
+                          "amount_in": routes[i + 1].get("amount_in"),
+                          "amount_out": routes[i + 1].get("amount_out"),
+                          "route": routes[i + 1].get("route")}
     return max_profit
-
-
-print(x := get_all_routes(True, 1, 3, 10000, 0.1))
-print(y := get_profitable_route(x))

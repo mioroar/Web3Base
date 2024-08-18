@@ -1,20 +1,6 @@
 import os
 from eth_account import Account
-
-
-def read_file(path: str) -> list:
-    """
-    Читает содержимое файла и возвращает его в виде списка строк.
-
-    :param path: Путь к файлу, который нужно прочитать.
-    :return: Список строк из файла.
-    :raises FileNotFoundError: Если файл не найден.
-    """
-    if os.path.exists(path):
-        with open(path, "r") as file:
-            return file.read().splitlines()
-    else:
-        raise FileNotFoundError(f"The file '{path}' does not exist.")
+from utils.other import read_file
 
 
 def mnemonic_to_private_key(mnemonics: list) -> list:

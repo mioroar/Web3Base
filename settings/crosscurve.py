@@ -21,6 +21,7 @@ tokens = [
     {"chain": "BSC", "ticker": "USDT", "address": "0x55d398326f99059fF775485246999027B3197955"},
 ]
 
+
 SWAP_ONLY_IN_PLUS = False
 SWAP_PLUS_SIZE = 0.01 # more than 0.01$
 
